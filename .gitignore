@@ -1,0 +1,23 @@
+# Build outputs
+build/
+**/build/
+target/
+out/
+
+# Logs
+logs/
+*.log
+
+# Env / secrets
+.env
+*.env
+
+# Node
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store

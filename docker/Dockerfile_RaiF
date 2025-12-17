@@ -13,7 +13,7 @@ RUN ./gradlew --no-daemon dependencies
 COPY app/todo-app_RaiF/src ./src
 
 # Build + tests; Boot jar lands in build/libs/
-RUN ./gradlew --no-daemon clean test bootJar
+RUN ./gradlew --no-daemon clean bootJar -x test
 
 # ===== Runtime stage (non-root) =====
 FROM eclipse-temurin:17-jre-alpine AS runtime

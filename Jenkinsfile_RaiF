@@ -1,0 +1,98 @@
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    disableConcurrentBuilds()
+  }
+
+  environment {
+    DOCKER_IMAGE = "raifaheem/devops-final-todo"   // можешь менять имя, но оставь стабильным
+    DOCKER_CREDS = "dockerhub_RaiF"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+        sh 'git rev-parse --short HEAD'
+      }
+    }
+
+    stage('Build') {
+      steps {
+        sh 'cd app/todo-app_RaiF && ./gradlew clean build -x test'
+      }
+    }
+
+    stage('Test') {
+      steps {
+        sh 'cd app/todo-app_RaiF && ./gradlew test'
+      }
+    }
+
+    stage('Docker Build') {
+      steps {
+        script {
+          def sha = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+          env.IMAGE_TAG = "build-${env.BUILD_NUMBER}-${sha}"
+        }
+        sh '''
+          docker build -f docker/Dockerfile_RaiF -t ${DOCKER_IMAGE}:${IMAGE_TAG} .
+          docker images | head
+        '''
+      }
+    }
+
+    stage('Docker Push') {
+      steps {
+        script {
+          docker.withRegistry('https://index.docker.io/v1/', DOCKER_CREDS) {
+            sh 'docker push ${DOCKER_IMAGE}:${IMAGE_TAG}'
+          }
+        }
+      }
+    }
+
+    stage('Deploy (main only)') {
+      when { branch 'main' }
+      steps {
+        // Для Part 2 деплой делаем через docker compose на VM (K8s будет в Part 3)
+        withCredentials([usernamePassword(credentialsId: DOCKER_CREDS, usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+          sh '''
+            set -e
+            cd docker
+
+            # создаём временный .env (не из гита) на время деплоя
+            cat > .env <<EOF_ENV
+POSTGRES_DB=todo
+POSTGRES_USER=todo
+POSTGRES_PASSWORD=${DH_PASS}
+APP_PORT=8080
+APP_IMAGE_TAG=${IMAGE_TAG}
+EOF_ENV
+
+            docker compose -f docker-compose_RaiF.yml pull || true
+            docker compose -f docker-compose_RaiF.yml up -d --build
+            docker compose ps
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: 'app/todo-app_RaiF/build/libs/*.jar', fingerprint: true
+    }
+    success {
+      echo "SUCCESS: pipeline completed"
+    }
+    failure {
+      echo "FAILURE: pipeline failed (tests/build/push cause automatic fail)"
+    }
+    cleanup {
+      sh 'docker system prune -f || true'
+    }
+  }
+}

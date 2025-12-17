@@ -1,0 +1,36 @@
+# ===== Build stage (Gradle Wrapper) =====
+FROM eclipse-temurin:17-jdk-jammy AS build
+WORKDIR /workspace
+
+# Copy only Gradle wrapper + build scripts first for better layer caching
+COPY app/todo-app_RaiF/gradle/ ./gradle/
+COPY app/todo-app_RaiF/gradlew app/todo-app_RaiF/build.gradle app/todo-app_RaiF/settings.gradle ./
+
+RUN chmod +x ./gradlew
+RUN ./gradlew --no-daemon dependencies
+
+# Copy sources last (changes here won't invalidate dependency cache)
+COPY app/todo-app_RaiF/src ./src
+
+# Build + tests; Boot jar lands in build/libs/
+RUN ./gradlew --no-daemon clean bootJar -x test
+
+# ===== Runtime stage (non-root) =====
+FROM eclipse-temurin:17-jre-alpine AS runtime
+WORKDIR /app
+
+# curl needed for HEALTHCHECK
+RUN apk add --no-cache curl \
+  && addgroup -S app \
+  && adduser -S -G app -u 10001 app
+
+# Copy jar from build/libs (IMPORTANT requirement)
+COPY --from=build /workspace/build/libs/*SNAPSHOT.jar /app/app.jar
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+  CMD curl -fsS http://localhost:8080/actuator/health || exit 1
+
+USER app
+ENTRYPOINT ["java","-XX:MaxRAMPercentage=75","-jar","/app/app.jar"]
